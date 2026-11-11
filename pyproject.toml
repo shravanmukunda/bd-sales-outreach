@@ -1,0 +1,9 @@
+[project]
+name = "webknot-bd"
+version = "0.1.0"
+description = "Webknot BD outreach agent scaffold"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
