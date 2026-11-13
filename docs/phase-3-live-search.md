@@ -1,6 +1,6 @@
 # Phase 3 — Live public search
 
-**Status:** Spec written. Build after phase 2.  
+**Status:** Built. Phase 2 is in the tree.  
 **Decisions:** the live-search half of D13, and D17.  
 **Depends on:** [phase-2-lead-policy.md](phase-2-lead-policy.md). Count, location, the draft gate, and `LeadRequest.signal` already exist.  
 **Spec:** [PRD.md](../PRD.md) sections 7.2 and 7.3, [architecture.md](../architecture.md) sections 6 and 14.
@@ -12,7 +12,7 @@ Phase 3 replaces the fictional `example.com` hits with public web results. DuckD
 ## Done when
 
 - `web_search` and `search_jobs_or_news` call DuckDuckGo and set `placeholder=false` on a live result.
-- `search_provider()` returns `duckduckgo` even when `TAVILY_API_KEY` is set. No Tavily client is imported.
+- `search_provider()` returns `tavily` when `TAVILY_API_KEY` is set, and `duckduckgo` when it is empty. Hiring queries on Tavily include Greenhouse, Lever, and Ashby.
 - `fetch_company_page` fetches one public http(s) URL and returns a text excerpt.
 - A named signal is the only signal searched. An unnamed signal fills hiring, then funding, then launch, up to `LeadRequest.count`.
 - Every kept hit has an http(s) evidence URL. LinkedIn, people-data hosts, and other blocked hosts are dropped.
@@ -24,30 +24,24 @@ Phase 3 replaces the fictional `example.com` hits with public web results. DuckD
 
 Add the `ddgs` package to `requirements.txt` and call `DDGS` from `web_search` and `search_jobs_or_news`. `httpx` and Beautiful Soup are already dependencies and are the fetch stack.
 
-`search_provider()` returns the string `duckduckgo` and does not read `tavily_api_key`. Leave the settings field in place.
+`search_provider()` returns `tavily` when `tavily_api_key` is set, and `duckduckgo` otherwise. Default pytest clears the key, so the suite stays on the offline fixture.
 
-One find-leads run performs at most three DuckDuckGo text searches (one per signal). One research run performs one web search and at most one page fetch of an allowed URL. Use a 15-second timeout. On exception, timeout, or an empty body, return an empty result list, `placeholder=false`, and a trace message naming the tool and the failure. Do not substitute the phase 1 fictional companies.
+One research run performs one web search and at most one page fetch of an allowed URL. Use a 15-second timeout. On exception, timeout, or an empty body, return an empty result list, `placeholder=false`, and a trace message naming the tool and the failure. Do not substitute the phase 1 fictional companies.
 
 ## What a query searches
 
-`search_jobs_or_news` reads the `LeadRequest` phase 2 stored: `count`, `location`, `signal`.
+`search_jobs_or_news` searches the phrase built from the `LeadRequest` slots in [phase-7-search-brief.md](phase-7-search-brief.md): sector, signal word, role, remote, location, then `jobs`, `funding`, or `product launch`. The operator's raw sentence is not sent to DuckDuckGo.
 
 | `signal` | Searches, in order, stopping at `count` unique companies |
 | --- | --- |
-| `hiring` | hiring only |
-| `funding` | funding only |
-| `launch` | launch only |
-| null | hiring, then funding, then launch |
-
-Query text sent to DuckDuckGo:
-
-| Signal | Query |
-| --- | --- |
-| hiring | `{query} jobs` plus the location when one is set |
-| funding | `{query} funding` |
-| launch | `{query} product launch` |
+| `hiring` | that hiring phrase only, then the startup list below if nothing is kept |
+| `funding` | that funding phrase only |
+| `launch` | that launch phrase only |
+| null | hiring, then funding, then launch, then the startup list if nothing is kept |
 
 Hits taken from the hiring search are `signal=hiring`, and the same for funding and launch. Drop a later hit whose normalized company name was already kept.
+
+When the hiring phrase keeps no company, read numbered `h2` and `h3` headings from one public list article. Try `top {sector} startups` in the place, then `funded {sector} startups`. Repeat a list search once when DuckDuckGo returns no rows. Those cards use signal `funding`, the article URL as evidence, and a snippet that says the company was named on that list. A title that is itself a job listing (`jobs`, `vacancies`, `openings`, `careers`, `hiring`) is not a company name.
 
 `web_search` is the research path. It sends the operator query, `max_results` from the input (still 1–10), and does not apply the signal order.
 
@@ -120,7 +114,7 @@ Add one test marked `network` that calls DuckDuckGo for the Bengaluru rubric que
 | --- | --- |
 | `requirements.txt` | Add `ddgs` |
 | `tools/web_search.py` | DuckDuckGo text search. Provider is always `duckduckgo` |
-| `tools/job_news_search.py` | Signal order, company parse, host filter |
+| `tools/job_news_search.py` | Signal order, company parse, host filter, startup-list fallback |
 | `tools/page_fetch.py` | One public GET, excerpt, contact stripping, optional `company_domain` |
 | `schemas/tool_io.py` | `company_domain` on the page-fetch output |
 | `graph/nodes/tool_node.py` | Pass signal into job/news search. Fetch short snippets and the research URL |

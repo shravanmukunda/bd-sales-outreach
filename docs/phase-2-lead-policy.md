@@ -1,6 +1,6 @@
 # Phase 2 — Lead policy and honest retrieval
 
-**Status:** Next. Phase 1 is done.  
+**Status:** Built. Phase 1 is done.  
 **Decisions:** D9, D11, the draft gate and the count cap from D13, D14, the retry rule from D17, the opt-out sentence from D18.  
 **Depends on:** [phase-1-scaffolding.md](phase-1-scaffolding.md).  
 **Spec:** [PRD.md](../PRD.md) sections 6, 7.1, 7.3, 7.5, 7.6, and [architecture.md](../architecture.md) sections 3, 6, 7, and 8.

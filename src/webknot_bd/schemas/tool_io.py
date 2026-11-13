@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 from webknot_bd.schemas.lead import LeadCard, Signal
@@ -23,6 +25,7 @@ class WebSearchOutput(BaseModel):
     query: str
     results: list[SearchHit]
     placeholder: bool = True
+    error: str = ""
 
 
 class PageFetchInput(BaseModel):
@@ -34,12 +37,19 @@ class PageFetchOutput(BaseModel):
     title: str
     text_excerpt: str
     placeholder: bool = True
+    company_domain: str = ""
+    error: str = ""
 
 
 class JobNewsSearchInput(BaseModel):
     query: str = Field(min_length=1)
     location: str | None = None
+    signal: Signal | None = None
     max_results: int = Field(default=5, ge=1, le=10)
+    role: str = ""
+    sector: str = ""
+    remote: bool = False
+    use_brief: bool = False
 
 
 class JobNewsHit(BaseModel):
@@ -55,6 +65,18 @@ class JobNewsSearchOutput(BaseModel):
     query: str
     results: list[JobNewsHit]
     placeholder: bool = True
+    error: str = ""
+
+
+class LeadRequest(BaseModel):
+    """Slots read from a find-leads sentence. The search phrase is built from these, not from the raw text."""
+
+    count: int = Field(default=5, ge=1, le=10)
+    location: str | None = None
+    remote: bool = False
+    role: str = ""
+    sector: str = ""
+    signal: Signal | None = None
 
 
 class ScoreLeadInput(BaseModel):
@@ -62,8 +84,9 @@ class ScoreLeadInput(BaseModel):
     signal: Signal
     evidence_url: str
     snippet: str = ""
-    matched_service: str = "product engineering"
-    fit_score: int = Field(default=70, ge=0, le=100)
+    query: str = ""
+    chunks: list[dict[str, Any]] = Field(default_factory=list)
+    placeholder: bool = True
 
 
 class ScoreLeadOutput(BaseModel):

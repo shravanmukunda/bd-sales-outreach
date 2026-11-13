@@ -19,7 +19,7 @@ from webknot_bd.graph.router import route_after_decision, route_after_retrieve
 from webknot_bd.schemas.state import GraphState
 
 
-def build_graph():
+def build_graph(*, checkpointer=None, interrupt_before: list[str] | None = None):
     graph = StateGraph(GraphState)
     graph.add_node("classify", classify_node)
     graph.add_node("decide", decide_node)
@@ -47,7 +47,7 @@ def build_graph():
     graph.add_edge("judge", "guardrails")
     graph.add_edge("guardrails", "respond")
     graph.add_edge("respond", END)
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer, interrupt_before=interrupt_before or [])
 
 
 def run_query(query: str) -> dict:

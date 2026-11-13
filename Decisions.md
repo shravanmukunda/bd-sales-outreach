@@ -136,9 +136,9 @@ Unsupported claims or a weak relevance score leave the draft at `pending_approva
 
 ### D17 — Demo search and demo model
 
-DuckDuckGo is the only search provider for the demo, for both web search and job/news search. Do not call Tavily unless a key is added later and this decision is revised. No LinkedIn, no people databases, no login-gated boards.
+Search uses Tavily when `TAVILY_API_KEY` is set, and DuckDuckGo when it is empty. A hiring search on Tavily checks public Greenhouse, Lever, and Ashby job posts first. No LinkedIn, no people databases, no login-gated boards.
 
-Chat, when `USE_LLM=true`, is local Ollama `llama3` for classify, decide, draft, and judge. If structured output fails validation, retry once, then fall back to the deterministic stub and record that fallback on the trace.
+Chat, when `USE_LLM=true`, is local Ollama `llama3` for classify, decide, the find-leads search brief, draft, and judge. If structured output fails validation, retry once, then fall back to the deterministic stub and record that fallback on the trace. The search phrase is built in code from the brief. An empty hiring search reads a public startup list and labels those cards `funding`.
 
 ### D18 — Opt-out line and the eval bar
 

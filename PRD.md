@@ -199,16 +199,6 @@ Routing tests already cover the three queries with the model off. A passing prod
 
 ## 11. Scaffold versus this spec
 
-The repo already has the graph, schemas, both chunkers, Chroma ingest of the seed files, the Streamlit trace, SQLite dedupe, and routing tests. The following decisions are the remaining product work:
+The decisions in sections 7 through 9 are in the tree. [architecture.md](architecture.md) section 15 is the landed record, and [docs/README.md](docs/README.md) is the build sequence.
 
-| Decision | Still to build |
-| --- | --- |
-| D9 | Retrieval answer must say there is no real case study, and must label the sample as sample |
-| D11 | Scorer must pick one allowed service line |
-| D12 | Draft writer: 120–160 words, one 20-minute-call ask, generic sign-off |
-| D13 | Live search up to the requested count (default 5, max 10); draft only when fit is at least 60; signal preference hiring, then funding, then launch |
-| D14 | 90-day dedupe window, including rejected rows |
-| D15 | Editable subject and body; approval stores the edited text |
-| D16 | Judge notes on the trace, with no rewrite and no block |
-| D17 | DuckDuckGo for web and job/news search; one retry then baseline on structured-output failure |
-| D18 | The opt-out sentence in section 7.5, verbatim, plus the eval checks in section 9 |
+A find-leads sentence is read into count, place, remote, role, sector, and signal. Code builds the DuckDuckGo phrase from those slots. When that hiring search keeps no company, the app reads a public startup list and marks those cards `funding`. The lead screen shows the slots that were searched.

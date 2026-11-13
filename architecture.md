@@ -2,7 +2,7 @@
 
 **Status:** Target architecture, locked 11 Nov 2026.  
 **Sources:** [Decisions.md](Decisions.md) (D1–D18) and [PRD.md](PRD.md).  
-**Code:** `src/webknot_bd/`. Section 15 records where the scaffold still differs from this design.
+**Code:** `src/webknot_bd/`. Section 15 records what the build landed.
 
 A single Webknot operator types a target. A local LangGraph run classifies it, optionally searches public company signals, scores those companies against a local knowledge base, and drafts emails that stay `pending_approval` until the operator edits and approves or rejects them. The process ends in SQLite. Nothing is emailed.
 
@@ -34,12 +34,12 @@ flowchart LR
 | Boundary | What crosses it |
 | --- | --- |
 | Operator → Streamlit | One query, then edits, approve, reject, or CSV export |
-| Graph → Ollama chat | Structured classify, decide, draft, and judge calls, and optional rerank. Only when the matching flag is on |
+| Graph → Ollama chat | Structured classify, decide, search-brief, draft, and judge calls, and optional rerank. Only when the matching flag is on |
 | Graph → Chroma | Similarity search over the seed corpus. Embeddings are `nomic-embed-text` |
 | Graph → public web | DuckDuckGo search and one public page fetch per URL. Company, job, and news pages only |
 | Graph and UI → SQLite | Lead rows, draft status, and the 90-day contact window |
 
-Chat and embeddings are separate. `USE_LLM=false` keeps classify, decide, draft, and judge on the deterministic baseline. Ingest and retrieval still call the embedding model when the store is used. If that call fails, retrieval returns an empty list and the route still completes.
+Chat and embeddings are separate. `USE_LLM=false` keeps classify, decide, the search brief, the draft, and the judge on the deterministic baseline. Ingest and retrieval still call the embedding model when the store is used. If that call fails, retrieval returns an empty list and the route still completes.
 
 ## 2. Packages
 
@@ -100,7 +100,7 @@ Rubric routes, covered with the chat model off:
 | Find 5 fintech startups hiring React developers in Bengaluru | `find_leads` | `tool`, then retrieve for fit |
 | What makes a good cold email subject line? | `draft_outreach` | `direct` |
 
-`classify` and `decide` share one pattern: a deterministic baseline, and the same function signature for Ollama structured output. Draft writing and the judge use the same failure rule.
+`classify`, `decide`, the find-leads search brief, draft writing, and the judge share one pattern: a deterministic baseline, and the same function signature for Ollama structured output.
 
 When `USE_LLM=true`:
 
@@ -108,7 +108,20 @@ When `USE_LLM=true`:
 2. If validation fails, retry once.
 3. If the retry fails, use the baseline and append a trace event that says the baseline was used.
 
-`USE_LLM=false` skips the model and uses the baseline immediately. The baseline is keyword routing in `graph/router.py`, fixed draft text, and a judge event that records that scoring did not run. It is the path tests execute.
+`USE_LLM=false` skips the model and uses the baseline immediately. The baseline is keyword routing in `graph/router.py`, a slot reader for the search phrase, fixed draft text, and the judge's deterministic notes. It is the path tests execute.
+
+A find-leads sentence is read into a `LeadRequest` before DuckDuckGo is called. The model does not write the search phrase. Code builds it from the slots, in this order: sector, signal word, role, `remote` when set, location, then `jobs`, `funding`, or `product launch`. The rubric sentence still produces `fintech hiring React developers Bengaluru jobs`.
+
+| Slot | Meaning |
+| --- | --- |
+| `count` | First integer, clamped to 1–10. Default 5 |
+| `location` | Any place. `bangalore` is stored as Bengaluru |
+| `remote` | True only when the sentence says remote, WFH, or work from home |
+| `role` | Short skill phrase, such as `Java Spring Boot` or `React developers` |
+| `sector` | Industry word, such as `fintech` |
+| `signal` | `hiring`, `funding`, or `launch`. "Looking for", "devs", "developers", "engineers", and "open roles" count as hiring unless the sentence is about funding or a launch |
+
+The offline reader covers those slots for the rubric sentence and for ordinary "in {place}" phrasing. With the model on, a reply is rejected when location or role is the whole sentence, when remote was not in the sentence, or when a hiring sentence comes back with another signal. The lead screen shows the slots that were searched. The brief is specified in [docs/phase-7-search-brief.md](docs/phase-7-search-brief.md).
 
 ## 4. State and contracts
 
@@ -133,6 +146,7 @@ Pydantic models in `schemas/` are the contract. Nodes dump to dicts on the state
 | --- | --- |
 | `Intent` | One of `find_leads`, `research_company`, `draft_outreach`, `ask_webknot`. Confidence is 0–1. Rationale is required |
 | `Decision` | One of `retrieve`, `tool`, `direct`. Reason and confidence are required |
+| `LeadRequest` | `count` 1–10, `location`, `remote`, `role`, `sector`, `signal`. The search phrase is built from these fields |
 | `LeadCard` | `company`, `signal` (`hiring`, `funding`, `launch`), `evidence_url` (http or https only), `fit_score` 0–100, `matched_service`, `reasoning` |
 | `OutreachDraft` | `company`, `subject`, `body`, `personalization_hooks`, `case_study_used`, `status`. New drafts are `pending_approval` |
 | `FinalResponse` | `answer`, `leads`, `drafts`, `trace`, `decision`, `intent` |
@@ -163,7 +177,7 @@ The corpus is the seed files in `data/raw/` only: `docs/icp.md`, `web/services.m
 
 Chunk metadata: `source`, `doc_type`, `industry`, `service`, `sample`, `chunk_strategy`. Front matter on the seed files supplies industry, service, and the sample flag.
 
-Retrieval is Chroma similarity search, `TOP_K=4`, behind `rag/retriever.py`. A metadata filter is applied only when the query or the lead names an industry or a service. Known industries for detection are logistics, fintech, healthcare, ecommerce, and edtech. There is no standing geography filter, no funding-stage filter, and no company-size floor. A place such as Bengaluru is a search constraint on the tool call when the query names it. Any funding stage is acceptable when the signal is strong.
+Retrieval is Chroma similarity search, `TOP_K=4`, behind `rag/retriever.py`. A metadata filter is applied only when the query or the lead names an industry or a service. Known industries for detection are logistics, fintech, healthcare, ecommerce, and edtech. There is no standing geography filter, no funding-stage filter, and no company-size floor. A place named in the query is a slot on the search brief, not a retrieval filter. Any funding stage is acceptable when the signal is strong.
 
 `RERANK=false` leaves similarity order unchanged. `RERANK=true` asks the same chat model for a permutation of the top-k indexes and keeps the original order if the reply is not a full permutation. There is no separate reranker model.
 
@@ -179,13 +193,15 @@ The tool node is a fixed sequence, not a model choosing tools. Each call goes th
 | --- | --- | --- | --- |
 | `web_search` | query, `max_results` 1–10 | hits: title, url, snippet | DuckDuckGo |
 | `fetch_company_page` | one public URL | title and text excerpt | One http(s) fetch of a company, job, or news page |
-| `search_jobs_or_news` | query, optional location, `max_results` 1–10 | hits: company, signal, title, url, snippet | DuckDuckGo, same public-page limit |
+| `search_jobs_or_news` | query, location, role, sector, remote, signal, `max_results` 1–10 | hits: company, signal, title, url, snippet | DuckDuckGo. The phrase comes from the search brief |
 | `score_lead` | company, signal, evidence URL, snippet, and the retrieved service context | one `LeadCard` | One allowed service line and a 0–100 score grounded in the chunks and the evidence URL |
 | `crm_upsert` | company, status, optional domain, note | domain, created, duplicate, status | Insert, or report the existing row |
 
-DuckDuckGo is the only search provider. `TAVILY_API_KEY` may stay in settings. This demo does not call Tavily. Tools may use public company pages, public job posts, and public news. They do not search people, scrape personal emails or phone numbers, or open LinkedIn, people databases, or login-gated boards.
+Search uses Tavily when `TAVILY_API_KEY` is set, and DuckDuckGo when it is empty. A hiring search on Tavily looks first at public Greenhouse, Lever, and Ashby job posts, and reads the company name from the URL. Tools may use public company pages, public job posts, and public news. They do not search people, scrape personal emails or phone numbers, or open LinkedIn, people databases, or login-gated boards.
 
 `find_leads` uses `search_jobs_or_news`, then `fetch_company_page` when a hit needs a page read. `research_company` uses `web_search` and then one `fetch_company_page`. Both then enter `retrieve`.
+
+The hiring phrase is one DuckDuckGo call. A company name is read from `at` or from the segment before ` - `, ` | `, or ` — `. Titles that are themselves job listings ("Java Developer Jobs in Bengaluru") are dropped, and LinkedIn, Indeed, Naukri, and the other blocked hosts are dropped before the title is read. When that call keeps no company, and the signal is hiring or unset, the tool reads numbered headings from a public startup list. It searches `top {sector} startups` in the place, then `funded {sector} startups`, and repeats a list search once when DuckDuckGo returns no rows. Those cards use signal `funding`, and the evidence URL is the list article. The snippet says the company was named on that list.
 
 Fit uses the chunks, so `score_lead` runs after `retrieve`, inside the outreach step for `find_leads`. The tool node’s job on that path is evidence: public hits with an http(s) URL. The locked edge order is tool, then retrieve, then outreach, which is why the score cannot be final before the chunks exist.
 
@@ -235,6 +251,8 @@ SQLite at `data/crm.sqlite`, table `companies`:
 | `status` | `pending_approval`, `approved`, or `rejected` |
 | `updated_at` | UTC timestamp of the last contact write |
 | `note` | Short reason, such as `draft created` |
+| `subject` | Subject stored on approve. Reject leaves the previous value |
+| `body` | Body stored on approve. Reject leaves the previous value |
 
 `normalize_domain` strips the scheme and `www`, and keeps a host when the value already looks like a domain. A bare company name becomes a slug plus `.local` so two phrasings of the same name share a key.
 
@@ -262,6 +280,7 @@ One page, `ui/app.py`:
 - Intent, rationale, and confidence.
 - Answer.
 - Expandable trace, one event per node.
+- On a find-leads run, one line under Leads with the count, role, sector, place, remote flag, and signal that were searched. A model fallback adds the baseline note.
 - Lead cards: signal, fit score, matched service, reasoning, evidence link.
 - Drafts: editable subject and body, hooks, case study used, approve and reject.
 - CRM table and CSV export.
@@ -278,9 +297,9 @@ One page, `ui/app.py`:
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Local Ollama |
 | `CHROMA_DIR` | `chroma` | Persistent store. Ingest refuses to delete a path outside the project |
 | `CRM_PATH` | `data/crm.sqlite` | CRM file |
-| `USE_LLM` | `false` | Chat calls for classify, decide, draft, and judge |
+| `USE_LLM` | `false` | Chat calls for classify, decide, the search brief, draft, and judge |
 | `RERANK` | `false` | Optional reorder of the top-k |
-| `TAVILY_API_KEY` | empty | Present and unused |
+| `TAVILY_API_KEY` | empty | When set, search uses Tavily. Empty keeps DuckDuckGo |
 | `TOP_K` | `4` | Retrieval width |
 | `WEB_CHUNK_SIZE` / `WEB_CHUNK_OVERLAP` | 800 / 150 | Web splitter |
 | `DOC_CHUNK_SIZE` / `DOC_CHUNK_OVERLAP` | 1000 / 0 | Doc splitter |
@@ -319,7 +338,7 @@ Node order asserted today:
 
 1. **classify** → `find_leads`.
 2. **decide** → `tool`, with a reason stored on the trace.
-3. **tool** → DuckDuckGo job and news search, location Bengaluru because the query names it, signal hiring because the query names it, `max_results` 5. Hits are public URLs. `placeholder` is false only when the hits came from the live call.
+3. **tool** → Read the sentence into slots: count 5, sector fintech, role React developers, location Bengaluru, signal hiring. DuckDuckGo receives `fintech hiring React developers Bengaluru jobs`. When that call keeps no company, the same step reads a public startup list and labels those cards `funding`. Hits are public URLs. `placeholder` is false only when the hits came from the live call. The page shows the slots before the cards.
 4. **retrieve** → top 4 chunks, industry filter `fintech` because the query names it. Sample chunks stay labeled.
 5. **outreach** → `score_lead` per hit using those chunks. Cards for every hit. Drafts only for `fit_score >= 60`, skipping domains contacted in the last 90 days. `matched_service` is one allowed line, often React / frontend when the signal is a React role. `case_study_used` stays empty while the corpus is sample-only.
 6. **judge** → relevance and unsupported-claim notes on the trace. Drafts unchanged.
@@ -363,21 +382,22 @@ The operator is the only authority who can move a draft to `approved`. The model
 
 ## 15. Scaffold versus this architecture
 
-The repo already compiles the graph, both chunkers, Chroma ingest, the Streamlit trace, SQLite storage, and the routing tests. The behaviors below are specified here and are still the remaining product work. Until they land, the UI must keep labeling placeholder cards.
+The gap in the table below was the scaffold. Phases 1–7 closed it. The build record is [docs/README.md](docs/README.md). `placeholder=true` remains only on the offline test fixture, and the UI warning follows that flag.
 
-| Area | This architecture | Current scaffold |
-| --- | --- | --- |
-| Case-study answer (D9) | State that no real case study is in the corpus, and label the sample as sample | Retrieve returns chunks. The answer lists them with a sample label and does not yet say there is no real case study |
-| Service line (D11) | Closed set of seven lines | `matched_service` is a free string. The tool node always sends `product engineering` |
-| Draft voice (D12) | 120–160 words, one 20-minute-call ask, generic sign-off | `build_draft` writes a short placeholder and says the writer is not built |
-| Live leads (D13) | DuckDuckGo, requested count, draft only at fit ≥ 60, signal order hiring then funding then launch | `search_jobs_or_news` returns five fictional `example.com` cards at fit 70, and every card is drafted. `max_results` is fixed at 5 |
-| Where scoring sits | After retrieve, so fit can use the chunks | `score_lead` runs inside the tool node, before retrieve, and copies the caller’s score |
-| Dedupe (D14) | 90-day window. Rejected rows count. A later draft is allowed | `should_skip` skips any existing domain with no date check |
-| Approval (D15) | Edited subject and body are stored | Body is shown in a text area. Approve and reject update status only. Subject is not an editor, and the edited body is not written |
-| Judge (D16) | Notes on the trace, no rewrite, no block | Trace event `status=not_scored`. Drafts are left as they are, which matches the no-rewrite rule |
-| Search provider (D17) | DuckDuckGo only | `search_provider` would report Tavily when a key is set, and neither provider is called. Outputs stay `placeholder=true` |
-| Structured-output failure (D17) | Retry once, then baseline, and record the fallback on the trace | One attempt, then baseline. The fallback is a log line, not a trace event |
-| Opt-out sentence (D18) | The verbatim sentence in section 7 | Guardrails append a shorter sentence: “reply stop and we won't contact you again.” |
-| Product eval (D18) | Answer checks in section 11 | Tests assert routes, placeholder cards, dedupe-on-any-row, and that the current opt-out string was appended |
+| Area | Landed behavior |
+| --- | --- |
+| Case-study answer (D9) | The logistics answer says the corpus has no real case study. Sample chunks stay labeled sample |
+| Service line (D11) | `matched_service` is one of the seven lines |
+| Draft voice (D12) | 120–160 words, one 20-minute-call ask, sign-off `Webknot Technologies` |
+| Live leads (D13) | DuckDuckGo, requested count, draft only at fit ≥ 60, hiring then funding then launch. An empty hiring search reads a public startup list |
+| Search brief | A find-leads sentence becomes count, place, remote, role, sector, and signal. Code builds the DuckDuckGo phrase |
+| Where scoring sits | After retrieve, so fit can use the chunks |
+| Dedupe (D14) | 90-day window. Rejected rows count. A later draft is allowed after the window |
+| Approval (D15) | The operator edits subject and body. Approve stores both. Reject leaves them |
+| Judge (D16) | Relevance and unsupported-claim notes on the trace. The draft is not rewritten or blocked |
+| Search provider (D17) | Tavily when a key is set, including public Greenhouse, Lever, and Ashby posts for hiring. DuckDuckGo when the key is empty |
+| Structured-output failure (D17) | One retry, then the baseline, with `fallback: true` on the trace |
+| Opt-out sentence (D18) | The verbatim sentence in section 7 |
+| Product eval (D18) | `tests/test_eval.py` checks the three rubric answers, not only the route |
 
-`README.md` still describes Tavily-when-configured and a permanent “do not draft this company again” rule. Those sentences predate D14 and D17. This file and [Decisions.md](Decisions.md) are the ones to follow.
+The seed files in `data/raw` are still sample text. Replacing them with real Webknot pages is a content swap, not a missing phase. Sending mail stays outside the product.

@@ -1,6 +1,6 @@
 # Phase 6 — Approval and product eval
 
-**Status:** Spec written. Build after phase 5.  
+**Status:** Built. Phase 5 is in the tree. The six-phase sequence is complete.  
 **Decisions:** D15, and the eval bar in D18.  
 **Depends on:** [phase-2-lead-policy.md](phase-2-lead-policy.md) for the case-study sentence, the draft gate, and the opt-out line. [phase-4-grounded-drafts.md](phase-4-grounded-drafts.md) for the body the operator edits. [phase-5-judge.md](phase-5-judge.md) for the notes that sit beside that draft. Live search from [phase-3-live-search.md](phase-3-live-search.md) is on in the app. The eval suite uses the offline fixture.  
 **Spec:** [PRD.md](../PRD.md) sections 7.5, 8, and 9, [architecture.md](../architecture.md) sections 8, 9, and 11.

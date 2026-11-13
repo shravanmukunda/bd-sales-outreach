@@ -13,6 +13,15 @@ class DraftStatus(str, Enum):
     rejected = "rejected"
 
 
+class DraftCopy(BaseModel):
+    """Subject and body from the writer, before status is applied."""
+
+    subject: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    personalization_hooks: list[str] = Field(default_factory=list)
+    case_study_used: str | None = None
+
+
 class OutreachDraft(BaseModel):
     company: str = Field(min_length=1)
     subject: str = Field(min_length=1)

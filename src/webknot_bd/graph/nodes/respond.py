@@ -56,6 +56,9 @@ def _answer(
     industry: str | None,
     service: str | None,
     store_ready: bool,
+    *,
+    skipped: list[dict],
+    placeholder: bool,
 ) -> str:
     if route == "direct":
         lowered = query.lower()
@@ -64,20 +67,29 @@ def _answer(
         return "This question can be answered directly. No documents were retrieved and no tools ran."
 
     parts: list[str] = []
-    if route == "tool":
+    if route == "tool" and placeholder:
         parts.append(
             f"Prepared {len(leads)} placeholder lead card(s) and {len(drafts)} draft(s) "
             "waiting for approval. No email was sent. Live company search is not connected, "
             "so these cards are fictional example.com placeholders, not real startups."
         )
+    elif route == "tool":
+        parts.append(
+            f"Prepared {len(leads)} lead card(s) from public search and {len(drafts)} draft(s) "
+            "waiting for approval. No email was sent."
+        )
     else:
         parts.append(
             f"Used the Webknot knowledge base. {len(chunks)} chunk(s) retrieved. No email was sent."
         )
+        if "case study" in query.lower():
+            parts.append("The corpus has no real case study yet.")
     if drafts:
         parts.append(f"{len(drafts)} draft(s) are pending approval.")
+    elif route == "tool" and leads and skipped:
+        parts.append("Every company is inside the 90-day window, so no new draft was created.")
     elif route == "tool" and leads:
-        parts.append("Every company was already in the CRM, so no new draft was created.")
+        parts.append("No lead reached a fit score of 60, so no draft was created.")
     if chunks:
         parts.append(_chunk_lines(chunks))
     elif route in {"retrieve", "tool"}:
@@ -91,6 +103,13 @@ def respond_node(state: GraphState) -> dict:
     leads = [LeadCard.model_validate(item) for item in state.get("leads") or []]
     drafts = [OutreachDraft.model_validate(item) for item in state.get("drafts") or []]
     chunks = list(state.get("retrieved_chunks") or [])
+    skipped: list[dict] = []
+    placeholder = False
+    for event in state.get("trace") or []:
+        if event.get("node") == "outreach":
+            skipped = list((event.get("data") or {}).get("skipped") or [])
+        if event.get("node") == "tool":
+            placeholder = bool((event.get("data") or {}).get("placeholder"))
     answer = _answer(
         route,
         state.get("query", ""),
@@ -100,6 +119,8 @@ def respond_node(state: GraphState) -> dict:
         state.get("industry"),
         state.get("service"),
         chroma_ready(),
+        skipped=skipped,
+        placeholder=placeholder,
     )
     event = trace_event("respond", "Built the final response. Nothing was sent.", route=route)
     trace = list(state.get("trace") or []) + [event]

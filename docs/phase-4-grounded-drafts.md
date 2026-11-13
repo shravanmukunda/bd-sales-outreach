@@ -1,6 +1,6 @@
 # Phase 4 — Grounded drafts
 
-**Status:** Spec written. Build after phase 3.  
+**Status:** Built. Phase 3 is in the tree.  
 **Decisions:** D12, and the draft half of D17.  
 **Depends on:** [phase-2-lead-policy.md](phase-2-lead-policy.md) for the draft gate, the service enum, and `invoke_or_baseline`. [phase-3-live-search.md](phase-3-live-search.md) for real evidence URLs. The writer also has to pass on the offline fixture.  
 **Spec:** [PRD.md](../PRD.md) section 7.3, [architecture.md](../architecture.md) section 7.
@@ -56,7 +56,7 @@ Hooks:
 
 When `USE_LLM=true`, outreach calls `invoke_or_baseline` with a `DraftCopy` model: `subject`, `body`, `personalization_hooks`, `case_study_used`. The prompt includes the allowed fields, the seven service names, the word range, the single ask, the sign-off, and the instruction to leave `case_study_used` null when no non-sample case study was retrieved.
 
-After a schema-valid model reply, run `accept_draft`. Failure raises, which is how the helper treats a bad payload: one retry, then the baseline, then `fallback: true` on the outreach trace.
+After a schema-valid model reply, run `accept_draft`. Failure raises, which is how the helper treats a bad payload: one retry, then the baseline, then `fallback: true` on the outreach trace. `invoke_or_baseline` takes an optional `check` so that raise happens inside the existing retry loop. With the model off, `check` is not called and the baseline is returned directly.
 
 `accept_draft` requires all of the following:
 
@@ -89,11 +89,12 @@ Use the offline search fixture from phase 3, plus direct calls to `build_draft` 
 
 | File | Change |
 | --- | --- |
+| `graph/llm.py` | Optional `check` on `invoke_or_baseline`, called after a schema-valid reply |
 | `graph/nodes/outreach.py` | Baseline outline, blurbs, `accept_draft`, `invoke_or_baseline` for the model path |
 | `schemas/outreach.py` | `DraftCopy` if it should live beside `OutreachDraft`. Status is still applied by the node |
 | `tests/test_drafts.py` | Voice, sample citation, fallback |
 
-`graph/llm.py` stays the phase 2 helper. This phase only calls it.
+`graph/llm.py` stays the phase 2 helper, plus the optional `check` above. This phase calls it from outreach.
 
 ## Out of this phase
 

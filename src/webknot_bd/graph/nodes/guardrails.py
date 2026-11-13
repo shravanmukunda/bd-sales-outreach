@@ -9,7 +9,7 @@ from webknot_bd.schemas.outreach import OutreachDraft
 from webknot_bd.schemas.state import GraphState
 
 OPT_OUT_LINE = (
-    "If you'd rather not hear from Webknot, reply stop and we won't contact you again."
+    "If you'd rather not hear from Webknot, reply 'stop' and we won't contact this address again."
 )
 
 # Personal inboxes. Evidence URLs are not passed through this.
@@ -25,7 +25,7 @@ def redact(text: str) -> str:
 
 
 def ensure_opt_out(body: str) -> str:
-    if "reply stop" in body.lower():
+    if OPT_OUT_LINE in body:
         return body
     return body.rstrip() + "\n\n" + OPT_OUT_LINE
 

@@ -1,6 +1,6 @@
 # Phase 5 — Judge
 
-**Status:** Spec written. Build after phase 4.  
+**Status:** Built. Phase 4 is in the tree.  
 **Decisions:** D7 and D16.  
 **Depends on:** [phase-4-grounded-drafts.md](phase-4-grounded-drafts.md). The judge reads the draft the writer just produced, plus the chunks and the evidence URL.  
 **Spec:** [PRD.md](../PRD.md) section 7.4, [architecture.md](../architecture.md) section 7.
@@ -54,7 +54,7 @@ Unsupported claims, each appended as its own string when the condition is true:
 | Body or subject contains `$`, `₹`, `€`, `%`, `pricing`, or `per hour`, and that token is not in the snippet or a non-sample chunk | `Price or metric is not in the evidence or the retrieved text.` |
 | A digit sequence of 2 or more digits appears in the body and is not in the evidence URL, the snippet, or a non-sample chunk | `A figure in the draft is not in the evidence or the retrieved text.` |
 
-The service blurbs from phase 4 have no digits, so a baseline draft with sample-only chunks produces an empty claim list and, for a hiring rubric card at fit 80 or above, relevance `strong`. A card at fit 70 with the company name and URL in the body is `adequate`.
+The service blurbs from phase 4 have no digits, so a baseline draft with sample-only chunks produces an empty claim list and, for a hiring rubric card at fit 80 or above, relevance `strong`. A card at fit 70 with the company name and URL in the body is `adequate`. The required ask `20-minute` is not treated as a figure.
 
 The baseline does not call the model. It does not edit the draft.
 

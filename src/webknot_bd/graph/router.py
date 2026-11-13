@@ -1,14 +1,16 @@
 """Intent labels and the retrieve / tool / direct decision.
 
 The baseline is deterministic so tests do not need Ollama. When `use_llm` is true,
-the same functions ask Ollama for a schema-valid result and fall back to the baseline
-if the model is down or the payload does not validate.
+the same functions ask Ollama for a schema-valid result. A failed call is retried
+once. If the retry fails, the baseline is used and the caller records that fallback.
 """
 
 from __future__ import annotations
 
-from webknot_bd.config import logger, settings
-from webknot_bd.graph.llm import structured_invoke
+import re
+
+from webknot_bd.config import settings
+from webknot_bd.graph.llm import invoke_or_baseline
 from webknot_bd.schemas.decision import Decision, Route
 from webknot_bd.schemas.intent import Intent, IntentLabel
 
@@ -33,6 +35,15 @@ def _is_direct_advice(query: str) -> bool:
     return any(pattern in text for pattern in patterns)
 
 
+_FIND_WORDS = ("search", "developers", "devs", "engineers", "openings", "roles")
+
+
+def _wants_leads(text: str) -> bool:
+    if any(token in text for token in ("find ", "hiring", "startup", "leads", "looking for")):
+        return True
+    return any(re.search(rf"\b{word}\b", text) for word in _FIND_WORDS)
+
+
 def baseline_intent(query: str) -> Intent:
     text = query.lower()
     if "case study" in text or ("webknot" in text and "find " not in text and "hiring" not in text):
@@ -41,7 +52,13 @@ def baseline_intent(query: str) -> Intent:
             confidence=0.9,
             rationale="The question is about Webknot's own material.",
         )
-    if any(token in text for token in ("find ", "hiring", "startup", "leads")):
+    if any(token in text for token in ("draft ", "write an email", "write a cold email", "outreach email")):
+        return Intent(
+            intent=IntentLabel.draft_outreach,
+            confidence=0.88,
+            rationale="The user wants an outreach draft.",
+        )
+    if _wants_leads(text):
         return Intent(
             intent=IntentLabel.find_leads,
             confidence=0.92,
@@ -52,12 +69,6 @@ def baseline_intent(query: str) -> Intent:
             intent=IntentLabel.research_company,
             confidence=0.86,
             rationale="The user wants public information about a company.",
-        )
-    if any(token in text for token in ("draft ", "write an email", "write a cold email", "outreach email")):
-        return Intent(
-            intent=IntentLabel.draft_outreach,
-            confidence=0.88,
-            rationale="The user wants an outreach draft.",
         )
     return Intent(
         intent=IntentLabel.draft_outreach,
@@ -104,47 +115,52 @@ def baseline_decision(query: str, intent: Intent) -> Decision:
     )
 
 
-def classify_intent(query: str, *, use_llm: bool | None = None) -> Intent:
-    if _use_model(use_llm):
-        try:
-            result = structured_invoke(
-                Intent,
-                (
-                    "Classify the user query into exactly one intent: "
-                    "find_leads, research_company, draft_outreach, or ask_webknot. "
-                    "Use ask_webknot when the question is about Webknot services, case studies, or the ICP. "
-                    "Include confidence from 0 to 1 and a short rationale.\n"
-                    f"Query: {query}"
-                ),
-            )
-            if isinstance(result, Intent):
-                return result
-            return Intent.model_validate(result)
-        except Exception:
-            logger.warning("LLM intent classification failed; using the baseline", exc_info=True)
-    return baseline_intent(query)
+def classify_intent(query: str, *, use_llm: bool | None = None) -> tuple[Intent, bool]:
+    result, fallback = invoke_or_baseline(
+        Intent,
+        (
+            "Classify the user query into exactly one intent: "
+            "find_leads, research_company, draft_outreach, or ask_webknot. "
+            "Use ask_webknot when the question is about Webknot services, case studies, or the ICP. "
+            "Use find_leads when the person asks for companies, startups, or people to contact, "
+            "including a place, a role, or remote work, however they phrase it. "
+            "Include confidence from 0 to 1 and a short rationale.\n"
+            "Examples:\n"
+            "- Find 5 fintech startups hiring React developers in Bengaluru -> find_leads\n"
+            "- Which Webknot case study fits a logistics company? -> ask_webknot\n"
+            "- What makes a good cold email subject line? -> draft_outreach\n"
+            "- Search me companies hiring Java Spring Boot devs in India -> find_leads\n"
+            "- Search me startups looking for remote devs in Australia -> find_leads\n"
+            "- Get me firms that need Spring developers in Sydney -> find_leads\n"
+            "- Research the company page for Acme Payments -> research_company\n"
+            "- Draft an outreach email for a logistics company -> draft_outreach\n"
+            f"Query: {query}"
+        ),
+        lambda: baseline_intent(query),
+        enabled=_use_model(use_llm),
+    )
+    if isinstance(result, Intent):
+        return result, fallback
+    return Intent.model_validate(result), fallback
 
 
-def decide(query: str, intent: Intent, *, use_llm: bool | None = None) -> Decision:
-    if _use_model(use_llm):
-        try:
-            result = structured_invoke(
-                Decision,
-                (
-                    "Choose one route. "
-                    "retrieve = answer from Webknot documents. "
-                    "tool = search or fetch public company information. "
-                    "direct = general knowledge, with no documents and no search. "
-                    "Return route, reason, and confidence from 0 to 1.\n"
-                    f"Intent: {intent.intent.value}\nQuery: {query}"
-                ),
-            )
-            if isinstance(result, Decision):
-                return result
-            return Decision.model_validate(result)
-        except Exception:
-            logger.warning("LLM routing failed; using the baseline", exc_info=True)
-    return baseline_decision(query, intent)
+def decide(query: str, intent: Intent, *, use_llm: bool | None = None) -> tuple[Decision, bool]:
+    result, fallback = invoke_or_baseline(
+        Decision,
+        (
+            "Choose one route. "
+            "retrieve = answer from Webknot documents. "
+            "tool = search or fetch public company information. "
+            "direct = general knowledge, with no documents and no search. "
+            "Return route, reason, and confidence from 0 to 1.\n"
+            f"Intent: {intent.intent.value}\nQuery: {query}"
+        ),
+        lambda: baseline_decision(query, intent),
+        enabled=_use_model(use_llm),
+    )
+    if isinstance(result, Decision):
+        return result, fallback
+    return Decision.model_validate(result), fallback
 
 
 def route_after_decision(state: dict) -> str:
