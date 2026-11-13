@@ -1,6 +1,6 @@
 # Decisions — Webknot BD Agent
 
-Status of the capstone build as of 11 Nov 2026. The other agent is scaffolding `/home/shravan/Developer/webknot-bd-agent` against these choices. D1–D8 come from the plan and the code already in the repo. D9–D18 are your answers from the same day. Nothing in this file is still open.
+Record of product decisions, current as of 13 Nov 2026. D1–D8 are the original build choices. D9–D18 are the product rules. The code follows this list.
 
 The product, in one line: a person describes a target, the agent finds public companies that match, scores them against Webknot’s offerings, and drafts an email that stays `pending_approval` until a human accepts it. The app never sends mail.
 
@@ -45,7 +45,7 @@ Pydantic models, already in `src/webknot_bd/schemas/`:
 - `LeadCard`: company, signal (`hiring` | `funding` | `launch`), `evidence_url` (http/https only), `fit_score` 0–100, `matched_service`, reasoning.
 - `OutreachDraft`: company, subject, body, `personalization_hooks`, `case_study_used`, status `pending_approval` | `approved` | `rejected`. New drafts always start at `pending_approval`.
 - `FinalResponse`: answer, leads, drafts, trace, decision, intent.
-- Tool I/O for web search, page fetch, job/news search, lead scoring, and CRM upsert. Search and fetch outputs carry `placeholder=true` until the live tools land.
+- Tool I/O for web search, page fetch, job/news search, lead scoring, and CRM upsert. Live search and fetch set `placeholder=false`. The offline test fixture is the path that still sets `placeholder=true`.
 
 ### D4 — RAG: two chunkers, one Chroma store, metadata filters
 
@@ -64,10 +64,10 @@ The seed files are the whole corpus for this capstone (see D9): a labeled ICP, a
 
 Registered tools, each with a typed input and output:
 
-- `web_search` — DuckDuckGo for this demo (see D17). The settings field for a Tavily key stays in config, and Tavily is not called.
+- `web_search` — Tavily when `TAVILY_API_KEY` is set, otherwise DuckDuckGo (see D17).
 - `fetch_company_page` — one public company or job/news URL.
-- `search_jobs_or_news` — hiring, funding, and launch signals. No people search and no personal-contact scraping.
-- `score_lead` — returns a `LeadCard`. The scaffold returns a fixed score; the real scorer is a later phase.
+- `search_jobs_or_news` — hiring, funding, and launch signals. A hiring search on Tavily checks public Greenhouse, Lever, and Ashby posts first. No people search and no personal-contact scraping.
+- `score_lead` — returns one `LeadCard`. The score uses the evidence URL, a service keyword, retrieved chunks, and a hiring signal.
 - `crm_upsert` — SQLite at `data/crm.sqlite` (gitignored), deduped on normalized company domain, plus CSV export.
 
 ### D6 — A human approves every draft; the app does not send email
@@ -76,15 +76,15 @@ Guardrails always append an opt-out line and strip text that looks like a person
 
 ### D7 — Judge scores drafts; it does not invent facts
 
-LLM-as-judge runs after the outreach node and before guardrails. It scores relevance and flags claims that are not supported by the retrieved chunks or the evidence URL. It is a later phase. The scaffold returns a schema-valid placeholder and a trace event.
+LLM-as-judge runs after the outreach node and before guardrails. It scores relevance and flags claims that are not supported by the retrieved chunks or the evidence URL. The notes go on the trace. The draft is not rewritten.
 
 ### D8 — Build order
 
-Schemas → RAG ingestion → tools → graph and routing → outreach node → UI → evals. This scaffold pass stops at a compiling graph, real chunking, typed tool stubs, a Streamlit trace shell, and routing tests. Live search, grounded email prose, and judge scores come after the skeleton compiles.
+Schemas, RAG ingestion, tools, graph and routing, outreach, the UI, and evals are all in the tree. Live search, grounded drafts, the judge, and approval are part of the running app.
 
 ## Decided from your answers (11 Nov 2026)
 
-These replace the working defaults. The scaffold should follow this list.
+These are the product rules the app follows.
 
 ### D9 — The capstone corpus is the labeled seed
 
@@ -152,7 +152,7 @@ Beyond routing, a passing eval looks like this:
 - Tool: return up to 5 `LeadCard`s, each with an evidence URL.
 - Direct: answer the question with no lead cards and no draft.
 
-Judge thresholds stay qualitative until the judge node is real.
+The judge writes notes. It does not apply a numeric cutoff.
 
 ## Explicitly out of scope
 

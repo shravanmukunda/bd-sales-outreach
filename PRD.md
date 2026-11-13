@@ -1,6 +1,6 @@
 # PRD — Webknot BD Agent
 
-**Status:** Spec locked 11 Nov 2026, from [Decisions.md](Decisions.md).  
+**Status:** Current as of 13 Nov 2026. Decisions are in [Decisions.md](Decisions.md). How the pieces fit is in [architecture.md](architecture.md).  
 **Owner:** Webknot Technologies Pvt. Ltd.  
 **Product:** A local agent that turns a target description into scored lead cards and outreach drafts a person must approve. The app never sends email.
 
@@ -99,13 +99,13 @@ Each tool has a typed input and output. Tools may use public company pages, publ
 
 | Tool | Behavior |
 | --- | --- |
-| `web_search` | DuckDuckGo only for this demo |
+| `web_search` | Tavily when `TAVILY_API_KEY` is set, otherwise DuckDuckGo |
 | `fetch_company_page` | One public company, job, or news URL |
-| `search_jobs_or_news` | Hiring, funding, and launch signals |
-| `score_lead` | One `LeadCard` |
+| `search_jobs_or_news` | Hiring, funding, and launch. A hiring search on Tavily checks public Greenhouse, Lever, and Ashby posts first and reads the company name from the job URL |
+| `score_lead` | One `LeadCard` from the evidence URL, the query, and the retrieved chunks |
 | `crm_upsert` | Insert or detect a company by normalized domain |
 
-DuckDuckGo is the only search provider. The Tavily settings field may remain, and the demo must not call Tavily.
+A find-leads sentence is read into count, place, remote, role, sector, and signal. Code builds the search phrase from those slots. Words such as hiring, developers, engineers, and devs select hiring, unless the sentence is about funding or a launch. When a hiring search keeps no company, the app reads a public startup list and marks those cards `funding`.
 
 `matched_service` is exactly one of:
 
@@ -144,7 +144,7 @@ Draft voice:
 
 The judge runs after outreach and before guardrails. It scores relevance and flags claims that are not supported by the retrieved chunks or the evidence URL.
 
-A weak score or an unsupported claim stays on the trace. The draft remains `pending_approval`. The judge does not rewrite the draft and does not block approval. Thresholds stay qualitative until this node is real.
+A weak score or an unsupported claim stays on the trace. The draft remains `pending_approval`. The judge does not rewrite the draft and does not block approval. There is no numeric cutoff.
 
 ### 7.5 Guardrails and approval
 
@@ -172,7 +172,8 @@ One Streamlit page:
 - Decision route, reason, and confidence.
 - Intent and rationale.
 - Expandable trace, one event per node.
-- Lead cards with signal, fit score, matched service, reasoning, and evidence link.
+- Lead cards appear as soon as search and scoring finish. Emails are written after that.
+- Each card shows signal, fit score, matched service, and reasoning. A hiring card has a Job hiring page button. Funding and launch cards use Funding page and Launch page. The same button is on the draft.
 - Drafts with editable subject and body, hooks, case study used, and approve / reject.
 - CRM table and CSV export.
 
@@ -195,10 +196,10 @@ Routing tests already cover the three queries with the model off. A passing prod
 - Multi-user auth, hosted deployment, or a shared CRM.
 - Auto-approval, even when the judge score is high.
 - Citing `sample=true` corpus rows as real Webknot work.
-- LinkedIn, people databases, login-gated job boards, and Tavily in this demo.
+- LinkedIn, people databases, and login-gated job boards.
 
-## 11. Scaffold versus this spec
+## 11. What is in the tree
 
-The decisions in sections 7 through 9 are in the tree. [architecture.md](architecture.md) section 15 is the landed record, and [docs/README.md](docs/README.md) is the build sequence.
+Sections 7 through 9 match the code. [architecture.md](architecture.md) is the map of the running app.
 
-A find-leads sentence is read into count, place, remote, role, sector, and signal. Code builds the DuckDuckGo phrase from those slots. When that hiring search keeps no company, the app reads a public startup list and marks those cards `funding`. The lead screen shows the slots that were searched.
+The lead screen shows the slots that were searched. With `USE_LLM=true`, a search-brief, draft, or judge reply that fails its check is tried once more, then the fixed baseline is used and the trace records `fallback: true`.

@@ -6,7 +6,7 @@ Nothing in this app sends email. Approve stores the edited subject and body in S
 
 ## What a find-leads run does
 
-With `USE_LLM=false`, which is the default, classify, decide, the search brief, the draft, and the judge use fixed rules. `llama3` is not called. Retrieval still uses the local embedding model when the Chroma store exists. The fixed brief reader still pulls a count, a place, a role, a sector, and a signal out of a find-leads sentence, then builds the DuckDuckGo phrase from those slots.
+With `USE_LLM=false`, which is the default, classify, decide, the search brief, the draft, and the judge use fixed rules. `llama3` is not called. Retrieval still uses the local embedding model when the Chroma store exists. The fixed brief reader still pulls a count, a place, a role, a sector, and a signal out of a find-leads sentence, then builds the search phrase from those slots.
 
 1. The query is routed. A find-leads question goes to search. A Webknot question goes to the corpus. A general writing question is answered directly.
 2. Search uses Tavily when `TAVILY_API_KEY` is set. Hiring queries look at public Greenhouse, Lever, and Ashby job posts first. With no key, search stays on DuckDuckGo. LinkedIn, Indeed, and other blocked hosts are dropped.
@@ -35,14 +35,13 @@ Set `USE_LLM=true` to ask `llama3` for classify, decide, the search brief, the d
 ```
 src/webknot_bd/schemas/    Intent, Decision, LeadCard, OutreachDraft, judge notes, tool I/O
 src/webknot_bd/rag/        Loaders, recursive and fixed chunkers, ingest, retriever
-src/webknot_bd/tools/      DuckDuckGo search, page fetch, scorer, CRM
+src/webknot_bd/tools/      Tavily or DuckDuckGo search, page fetch, scorer, CRM
 src/webknot_bd/memory/     90-day dedupe on company domain
 src/webknot_bd/graph/      Nodes, router, compiled graph
 src/webknot_bd/evals/      The three required queries
 src/webknot_bd/ui/app.py   Streamlit trace and approval gate
 data/raw/web/              Service pages and case studies (recursive chunks)
 data/raw/docs/             ICP and proposals (fixed-size chunks)
-docs/                      The build phases
 ```
 
 `data/raw` is seed text, marked `sample: true`. The logistics answer says the corpus has no real case study. Swap in real Webknot pages when you have them. Outreach will not cite a `sample: true` chunk as a client engagement.
@@ -50,7 +49,6 @@ docs/                      The build phases
 ## Setup
 
 ```bash
-cd /home/shravan/Developer/webknot-bd-agent
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
